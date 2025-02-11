@@ -1,4 +1,5 @@
 import sys
+import hashlib
 from PySide6.QtWidgets import (
     QApplication, QWidget, QVBoxLayout, QLineEdit, QPushButton, QLabel, QButtonGroup, QRadioButton
 )
@@ -53,7 +54,18 @@ class HashGeneratorApp(QWidget):
         self.setLayout(self.layout)
 
     def generate_hash(self):
-        #Christians del
+        text = self.input_field.text().encode('utf-8')
+        if self.sha256_btn.isChecked():
+            hashed = hashlib.sha256(text).hexdigest()
+        elif self.sha3_256_btn.isChecked():
+            hashed = hashlib.sha3_256(text).hexdigest()
+        elif self.md5_btn.isChecked():
+            hashed = hashlib.md5(text).hexdigest()
+        elif self.sha1_btn.isChecked():
+            hashed = hashlib.sha1(text).hexdigest()
+        else:
+            hashed = "No algorithm selected"
+        
         self.output_label.setText(f"Hash: {hashed}")
 
     def clear_fields(self):
