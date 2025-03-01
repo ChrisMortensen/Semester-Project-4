@@ -1,56 +1,52 @@
-SERVER_HOST = "127.0.0.1"
-SERVER_PORT = 1234
-
 import socket
+import threading
+import datetime
 
-clientToRelayServer = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-clientToRelayServer.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+STUN_SERVER_IP = "107.189.20.63"
+STUN_SERVER_PORT = 12345
 
-print(f"Connecting to RELAY SERVER @ {SERVER_HOST}:{SERVER_PORT}...\n")
-clientToRelayServer.connect((SERVER_HOST, SERVER_PORT))
 
-print("> Local connection to RELAY SERVER:", clientToRelayServer.getsockname())
+def main():
+    client_socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
 
-portThatClientUsedToConnectToMainServer = clientToRelayServer.getsockname()[1]
-peerServerListeningAddress = ("0.0.0.0", portThatClientUsedToConnectToMainServer)
-myPeerServer = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-myPeerServer.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-print("> Starting P2P server on", peerServerListeningAddress)
-myPeerServer.bind(peerServerListeningAddress)
-myPeerServer.listen()
+    # register client
+    client_socket.sendto("REGISTER".encode(), (STUN_SERVER_IP, STUN_SERVER_PORT))
 
-import select
-import time
+    # Receive own IP and port from the STUN server
+    response = client_socket.recv(1024).decode()
+    my_id , my_ip , my_port = response.split(',')
+    print(f"Registered as client {my_id} with IP {my_ip} and port {my_port}")
 
-readList = [clientToRelayServer, myPeerServer]
+    # create a thread to listen for messages from other clients
 
-while True:
-  conns, _, _ = select.select(readList, [], [], 1)
-  for connection in conns:
-    if connection is myPeerServer:
-      newConnection, clientToRelayServer_address = myPeerServer.accept()
-      readList.append(newConnection)
-      print("P2P | New connection from", clientToRelayServer_address)
-      
-    elif connection is clientToRelayServer:
-      data = connection.recv(4096)
-      if not data:
-        print("RELAY | Server closed.")
-        readList.remove(clientToRelayServer)
-      else:
-        # Naively assume the data is an address tuple
-        host, port = data.decode().split("|")
-        port = int(port)
-        print("RELAY | Got peer address:", (host,port))
-        print(f"| Going to connect to {host}:{port}!")
-        newClient = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        newClient.connect((host,port))
-        newClient.send(b"Hey ;)")
+    client_id = int(input("Enter client number\n"))
+    # Request the IP and port of desired client
+    client_socket.sendto(f"REQUEST {client_id}".encode(), (STUN_SERVER_IP, STUN_SERVER_PORT))
+    response = client_socket.recv(1024).decode()
+    if response == "NOT_FOUND":
+        print(f"Client {client_id} not found")
     else:
-      data = connection.recv(4096)
-      if not data:
-        print("Peer | A connection was closed.")
-        readList.remove(connection)
-      else:
-        print("Peer | Data:", data.decode())
-  time.sleep(1)
+        client_ip, client_port = response.split(',')
+        print(f"connected to client {client_id}.")
+    print("ready to send")
+    client_handler = threading.Thread(target=listen, args=(client_socket,))
+    client_handler.start()
+
+    while(True):
+        # ask for the message to send
+        message = input()
+        # attach the date and time of sending to the message
+        message = f"{message} (sent at {datetime.datetime.now()})"
+        # send the message to the desired client
+        client_socket.sendto(message.encode(), (client_ip, int(client_port)))
+
+def listen(client_socket):
+
+    print(f"ready to listen")
+
+    while True:
+        message, addr = client_socket.recvfrom(1024)
+        print(f"Received message: {message.decode()}")
+    
+if __name__ == "__main__":
+    main()
