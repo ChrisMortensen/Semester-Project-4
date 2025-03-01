@@ -1,33 +1,29 @@
-import asyncio
-import websockets
+def tupleToDelimString(tup):
+  # ("a", 2, "c") -> "a|2|c"
+  return "|".join([str(item) for item in tup])
+  
+import socket
 
-# Store connected peers
-peers = {}
+LISTEN_IP = "0.0.0.0"
+LISTEN_PORT = 1234
 
-async def handler(websocket, path):
-    global peers
+server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+server.bind((LISTEN_IP, LISTEN_PORT))
 
-    try:
-        peer_id = await websocket.recv()  # First message is the peer's ID
-        peers[peer_id] = websocket
-        print(f"Peer {peer_id} connected")
+server.listen()
+print(f"Server listening on {LISTEN_IP}:{LISTEN_PORT}")
 
-        while True:
-            message = await websocket.recv()
-            target_id, msg = message.split("|", 1)
+clients = []
 
-            if target_id in peers:
-                await peers[target_id].send(f"{peer_id}|{msg}")
-            else:
-                await websocket.send(f"ERROR|Peer {target_id} not found")
+while len(clients) < 2:
+  connection, client_address = server.accept()
+  print("New connection from", client_address)
+  clients.append(connection)
 
-    except Exception as e:
-        print(f"Peer {peer_id} disconnected: {e}")
-    finally:
-        del peers[peer_id]
+print("Two clients have connected. Exchanging details for P2P")
+clients[0].send(tupleToDelimString(clients[1].getpeername()).encode())
+clients[1].send(tupleToDelimString(clients[0].getpeername()).encode())
 
-async def main():
-    server = await websockets.serve(handler, "0.0.0.0", 8765)
-    await server.wait_closed()
-
-asyncio.run(main())
+print("Exit!")
+#clients[0].close()
+#clients[1].close()
