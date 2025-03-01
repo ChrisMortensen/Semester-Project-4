@@ -1,7 +1,7 @@
 import socket
 import threading
 
-STUN_SERVER_IP = "localhost"
+STUN_SERVER_IP = "107.189.20.63"
 STUN_SERVER_PORT = 12345
 
 id_generator_lock = threading.Lock()
