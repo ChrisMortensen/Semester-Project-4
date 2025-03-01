@@ -1,69 +1,65 @@
 import socket
 import sys
 import threading
+import time
 
-# Address of the rendezvous server (used to facilitate peer-to-peer connection)
-rendezvous = ('147.182.184.215', 55555)
+# Rendezvous server address (Replace with your actual server)
+RENDEZVOUS_SERVER = ('107.189.20.63', 55555)
 
-# Step 1: Connect to the rendezvous server
-print('connecting to rendezvous server')
+print("Connecting to rendezvous server...")
 
-# Create a UDP socket
+# Step 1: Create UDP socket & register with rendezvous server
 sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-# Bind the socket to a local port (50001) to receive responses
-sock.bind(('0.0.0.0', 50001))
-# Send an initial message ('0') to the rendezvous server to check in
-sock.sendto(b'0', rendezvous)
+sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+sock.bind(('0.0.0.0', 0))  # Bind to any available local port
 
-# Wait for a response from the server indicating readiness
+local_port = sock.getsockname()[1]  # Get the actual assigned port
+print(f"Local socket bound to: {local_port}")
+
+# Send a registration message to the server
+sock.sendto(b'0', RENDEZVOUS_SERVER)
+
+# Step 2: Wait for a "ready" response from the server
 while True:
-    data = sock.recv(1024).decode()
-    if data.strip() == 'ready':
-        print('checked in with server, waiting')
+    data, addr = sock.recvfrom(1024)
+    if data.decode().strip() == 'ready':
+        print("Checked in with server, waiting for peer...")
         break
 
-# Receive peer connection details from the rendezvous server
-data = sock.recv(1024).decode()
-ip, sport, dport = data.split(' ')
-sport = int(sport)  # Source port (our local port for communication)
-dport = int(dport)  # Destination port (peer's listening port)
+# Step 3: Receive peer information (IP & ports)
+data, addr = sock.recvfrom(1024)
+peer_ip, sport, dport = data.decode().split()
+sport, dport = int(sport), int(dport)
 
-print('\ngot peer')
-print('  ip:          {}'.format(ip))
-print('  source port: {}'.format(sport))
-print('  dest port:   {}\n'.format(dport))
+print(f"\nGot peer details:")
+print(f"  Peer IP: {peer_ip}")
+print(f"  Source Port (assigned by server): {sport}")
+print(f"  Destination Port (peer's listening port): {dport}\n")
 
-# Step 2: Perform UDP hole punching
-# This sends a dummy packet to the peer to establish NAT traversal
-print('punching hole')
+# Step 4: Perform UDP Hole Punching
+print("Punching hole...")
+sock.sendto(b'0', (peer_ip, dport))  # Send an initial packet to peer
 
-# Create a new UDP socket for communication
-sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-# Bind it to our assigned source port (so the peer can recognize us)
-sock.bind(('0.0.0.0', sport))
-# Send a dummy message ('0') to the peer to establish a connection
-sock.sendto(b'0', (ip, dport))
-
-print('ready to exchange messages\n')
-
-# Step 3: Start a listener thread to receive messages from the peer
-def listen():
-    # Create a new UDP socket to listen for incoming messages
-    sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-    sock.bind(('0.0.0.0', sport))  # Bind to our communication port
-    
+# Step 5: Send Keep-Alive Messages to Maintain NAT Mapping
+def keep_alive():
     while True:
-        data = sock.recv(1024)  # Receive data from the peer
-        print('\rpeer: {}\n> '.format(data.decode()), end='')
+        sock.sendto(b'keep-alive', (peer_ip, dport))
+        time.sleep(10)  # Send every 10 seconds to keep the NAT mapping open
 
-# Start the listener thread to receive incoming messages
+threading.Thread(target=keep_alive, daemon=True).start()
+
+print("Ready to exchange messages!\n")
+
+# Step 6: Start a listener thread for incoming messages
+def listen():
+    while True:
+        data, addr = sock.recvfrom(1024)
+        print(f"\rPeer: {data.decode()}\n> ", end='')
+
 listener = threading.Thread(target=listen, daemon=True)
 listener.start()
 
-# Step 4: Send messages to the peer
-sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-sock.bind(('0.0.0.0', dport))  # Bind to our destination port
-
+# Step 7: Send messages in a loop
 while True:
-    msg = input('> ')  # Get user input
-    sock.sendto(msg.encode(), (ip, sport))  # Send message to the peer
+    msg = input("> ")
+    sock.sendto(msg.encode(), (peer_ip, dport))

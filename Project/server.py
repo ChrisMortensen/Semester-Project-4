@@ -1,38 +1,45 @@
 import socket
 
 # Port where this server listens for incoming client connections
-known_port = 50002
+SERVER_PORT = 55555
 
 # Create a UDP socket
 sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-# Bind the socket to port 55555 to listen for client messages
-sock.bind(('0.0.0.0', 55555))
+sock.bind(('0.0.0.0', SERVER_PORT))
+
+print(f"Rendezvous server listening on port {SERVER_PORT}...")
+
+clients = {}  # Dictionary to store connected clients
 
 while True:
-    clients = []  # List to store connected clients
+    # Receive a message from a client
+    data, address = sock.recvfrom(128)
+    
+    if address in clients:
+        print(f"Duplicate connection from: {address}, ignoring...")
+        continue  # Ignore duplicate registrations
 
-    while True:
-        # Receive a message from a client
-        data, address = sock.recvfrom(128)
+    print(f"New client registered: {address}")
+    clients[address] = True  # Store client info
 
-        print('connection from: {}'.format(address))
-        clients.append(address)  # Store client address
+    # Send a 'ready' message back to the client
+    sock.sendto(b'ready', address)
 
-        # Send a 'ready' message back to the client to acknowledge connection
-        sock.sendto(b'ready', address)
+    # Wait until two unique clients are connected
+    if len(clients) >= 2:
+        print("Two clients connected, facilitating peer-to-peer connection...")
+        break
 
-        # Once we have two clients, we can facilitate the peer-to-peer connection
-        if len(clients) == 2:
-            print('got 2 clients, sending details to each')
-            break
+# Extract client details
+c1, c2 = list(clients.keys())[:2]
+c1_ip, c1_port = c1
+c2_ip, c2_port = c2
 
-    # Extract client details
-    c1 = clients.pop()
-    c1_addr, c1_port = c1
-    c2 = clients.pop()
-    c2_addr, c2_port = c2
+print(f"Client 1: {c1_ip}:{c1_port}")
+print(f"Client 2: {c2_ip}:{c2_port}")
 
-    # Send each client the other's IP address and port
-    # This allows them to attempt a direct connection (UDP hole punching)
-    sock.sendto('{} {} {}'.format(c1_addr, c1_port, known_port).encode(), c2)
-    sock.sendto('{} {} {}'.format(c2_addr, c2_port, known_port).encode(), c1)
+# Step 1: Send each client the other's **public** IP & port (NAT-aware)
+sock.sendto(f"{c2_ip} {c2_port} {c1_port}".encode(), c1)
+sock.sendto(f"{c1_ip} {c1_port} {c2_port}".encode(), c2)
+
+# Clear clients to handle new connections
