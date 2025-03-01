@@ -1,45 +1,39 @@
 import socket
 
 # Port where this server listens for incoming client connections
-SERVER_PORT = 55555
+known_port = 50002
 
-# Create a UDP socket
-sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-sock.bind(('0.0.0.0', SERVER_PORT))
-
-print(f"Rendezvous server listening on port {SERVER_PORT}...")
-
-clients = {}  # Dictionary to store connected clients
+# Create a TCP socket
+sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+# Bind the socket to port 55555 to listen for client connections
+sock.bind(('0.0.0.0', 55555))
+# Allow the server to accept connections (backlog of 5 clients)
+sock.listen(5)
 
 while True:
-    # Receive a message from a client
-    data, address = sock.recvfrom(128)
+    clients = []  # List to store connected clients
+
+    while len(clients) < 2:
+        # Accept a new client connection
+        conn, address = sock.accept()
+        print('Connection from: {}'.format(address))
+        clients.append((conn, address))
+
+        # Send a 'ready' message back to the client to acknowledge connection
+        conn.sendall(b'ready')
     
-    if address in clients:
-        print(f"Duplicate connection from: {address}, ignoring...")
-        continue  # Ignore duplicate registrations
+    print('Got 2 clients, sending details to each')
 
-    print(f"New client registered: {address}")
-    clients[address] = True  # Store client info
+    # Extract client details
+    c1_conn, c1 = clients.pop()
+    c1_addr, _ = c1
+    c2_conn, c2 = clients.pop()
+    c2_addr, _ = c2
 
-    # Send a 'ready' message back to the client
-    sock.sendto(b'ready', address)
-
-    # Wait until two unique clients are connected
-    if len(clients) >= 2:
-        print("Two clients connected, facilitating peer-to-peer connection...")
-        break
-
-# Extract client details
-c1, c2 = list(clients.keys())[:2]
-c1_ip, c1_port = c1
-c2_ip, c2_port = c2
-
-print(f"Client 1: {c1_ip}:{c1_port}")
-print(f"Client 2: {c2_ip}:{c2_port}")
-
-# Step 1: Send each client the other's **public** IP & port (NAT-aware)
-sock.sendto(f"{c2_ip} {c2_port} {c1_port}".encode(), c1)
-sock.sendto(f"{c1_ip} {c1_port} {c2_port}".encode(), c2)
-
-# Clear clients to handle new connections
+    # Send each client the other's IP address and known port
+    c1_conn.sendall('{} {}'.format(c2_addr, known_port).encode())
+    c2_conn.sendall('{} {}'.format(c1_addr, known_port).encode())
+    
+    # Close the connections
+    c1_conn.close()
+    c2_conn.close()
