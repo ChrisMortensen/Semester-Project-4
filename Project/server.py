@@ -1,39 +1,33 @@
-import socket
+import asyncio
+import websockets
 
-# Port where this server listens for incoming client connections
-known_port = 50002
+# Store connected peers
+peers = {}
 
-# Create a TCP socket
-sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-# Bind the socket to port 55555 to listen for client connections
-sock.bind(('0.0.0.0', 55555))
-# Allow the server to accept connections (backlog of 5 clients)
-sock.listen(5)
+async def handler(websocket, path):
+    global peers
 
-while True:
-    clients = []  # List to store connected clients
+    try:
+        peer_id = await websocket.recv()  # First message is the peer's ID
+        peers[peer_id] = websocket
+        print(f"Peer {peer_id} connected")
 
-    while len(clients) < 2:
-        # Accept a new client connection
-        conn, address = sock.accept()
-        print('Connection from: {}'.format(address))
-        clients.append((conn, address))
+        while True:
+            message = await websocket.recv()
+            target_id, msg = message.split("|", 1)
 
-        # Send a 'ready' message back to the client to acknowledge connection
-        conn.sendall(b'ready')
-    
-    print('Got 2 clients, sending details to each')
+            if target_id in peers:
+                await peers[target_id].send(f"{peer_id}|{msg}")
+            else:
+                await websocket.send(f"ERROR|Peer {target_id} not found")
 
-    # Extract client details
-    c1_conn, c1 = clients.pop()
-    c1_addr, _ = c1
-    c2_conn, c2 = clients.pop()
-    c2_addr, _ = c2
+    except Exception as e:
+        print(f"Peer {peer_id} disconnected: {e}")
+    finally:
+        del peers[peer_id]
 
-    # Send each client the other's IP address and known port
-    c1_conn.sendall('{} {}'.format(c2_addr, known_port).encode())
-    c2_conn.sendall('{} {}'.format(c1_addr, known_port).encode())
-    
-    # Close the connections
-    c1_conn.close()
-    c2_conn.close()
+async def main():
+    server = await websockets.serve(handler, "0.0.0.0", 8765)
+    await server.wait_closed()
+
+asyncio.run(main())

@@ -1,44 +1,69 @@
+import asyncio
+import websockets
 import socket
 import threading
 
-rendezvous = ('107.189.20.63', 55555)  # Address of the rendezvous server
+SIGNALING_SERVER = "ws://107.189.20.63:8765"  # Change to your server IP
+LOCAL_PORT = 5000  # Port for P2P connection
 
-# Step 1: Connect to the rendezvous server
-print('Connecting to rendezvous server...')
+peer_id = input("Enter your peer ID: ")
+target_id = input("Enter the target peer ID: ")
 
-sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-sock.connect(rendezvous)  # Establish TCP connection with the server
+async def signaling_client():
+    async with websockets.connect(SIGNALING_SERVER) as ws:
+        await ws.send(peer_id)  # Send peer ID to server
 
-# Wait for a response from the server
-response = sock.recv(1024).decode()
-if response.strip() == 'ready':
-    print('Checked in with server, waiting for peer...')
+        while True:
+            message = await ws.recv()
+            sender_id, data = message.split("|", 1)
 
-# Receive peer details
-data = sock.recv(1024).decode()
-ip, port = data.split(' ')
-port = int(port)
+            print(f"Signaling: {sender_id} -> {data}")
 
-print(f'Got peer: {ip}:{port}\n')
+            if data.startswith("CONNECT"):
+                peer_ip = data.split(":")[1]
+                print(f"Trying to connect to {peer_ip}")
+                connect_to_peer(peer_ip)
 
-# Step 2: Connect to the peer
-peer_sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-peer_sock.connect((ip, port))  # Establish direct TCP connection
-print('Connected to peer. Ready to exchange messages.\n')
-
-# Function to listen for incoming messages
-def listen():
+async def send_message():
     while True:
-        data = peer_sock.recv(1024).decode()
-        if not data:
+        msg = input("Message: ")
+        if msg.lower() == "exit":
             break
-        print(f'\rPeer: {data}\n> ', end='')
+        await send_via_signaling(f"{target_id}|CONNECT:{get_local_ip()}")
+        send_to_peer(msg)
 
-# Start a listening thread
-listener = threading.Thread(target=listen, daemon=True)
-listener.start()
+def get_local_ip():
+    return socket.gethostbyname(socket.gethostname())
 
-# Step 3: Send messages to the peer
-while True:
-    msg = input('> ')
-    peer_sock.sendall(msg.encode())  # Send message to peer
+def connect_to_peer(ip):
+    global peer_socket
+    peer_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    peer_socket.connect((ip, LOCAL_PORT))
+    print(f"Connected to peer {ip}")
+
+    thread = threading.Thread(target=receive_from_peer)
+    thread.start()
+
+def send_to_peer(msg):
+    peer_socket.sendall(msg.encode())
+
+def receive_from_peer():
+    while True:
+        try:
+            data = peer_socket.recv(1024)
+            if not data:
+                break
+            print(f"Peer: {data.decode()}")
+        except:
+            break
+
+async def send_via_signaling(msg):
+    async with websockets.connect(SIGNALING_SERVER) as ws:
+        await ws.send(peer_id)
+        await ws.send(msg)
+
+async def main():
+    threading.Thread(target=asyncio.run, args=(send_message(),)).start()
+    await signaling_client()
+
+asyncio.run(main())
