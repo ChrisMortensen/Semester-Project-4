@@ -1,53 +1,29 @@
 import socket
-import threading
 
-STUN_SERVER_IP = "107.189.20.63"
-STUN_SERVER_PORT = 12345
+known_port = 50002
 
-id_generator_lock = threading.Lock()
-id_generator = 0
-clients  = {}
+sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+sock.bind(('0.0.0.0', 55555))
 
-def handle_client(server_socket,data, addr):
-    request = data.decode().split(' ')
-    if request[0] == "REGISTER":
-        register_client(server_socket,addr)
-    elif request[0] == "REQUEST":
-        request_client(server_socket,addr, request[1])
-
-
-def register_client(server_socket,addr):
-    global id_generator
-    id_generator_lock.acquire()
-    client_id = id_generator
-    id_generator += 1
-    id_generator_lock.release()
-    clients[client_id] = addr
-     # Send the client's IP and port back to the client
-    ip , port = addr
-    response = f"{client_id},{ip},{port}"
-    server_socket.sendto(response.encode(), addr)
-
-    
-def request_client(server_socket,addr,client_id):
-    if int(client_id) in clients:
-        des_addr = clients[int(client_id)]
-        ip , port = des_addr
-        response = f"{ip},{port}"
-        server_socket.sendto(response.encode(), addr)
-    else:
-        server_socket.send("NOT_FOUND".encode(),addr)
-
-def main():
-    server_socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-    server_socket.bind((STUN_SERVER_IP, STUN_SERVER_PORT))
-
-    print(f"STUN Server listening on {STUN_SERVER_IP}:{STUN_SERVER_PORT}")
+while True:
+    clients = []
 
     while True:
-        data, addr = server_socket.recvfrom(4096)
-        client_handler = threading.Thread(target=handle_client, args=(server_socket,data,addr))
-        client_handler.start()
+        data, address = sock.recvfrom(128)
 
-if __name__ == "__main__":
-    main()
+        print('connection from: {}'.format(address))
+        clients.append(address)
+
+        sock.sendto(b'ready', address)
+
+        if len(clients) == 2:
+            print('got 2 clients, sending details to each')
+            break
+
+    c1 = clients.pop()
+    c1_addr, c1_port = c1
+    c2 = clients.pop()
+    c2_addr, c2_port = c2
+
+    sock.sendto('{} {} {}'.format(c1_addr, c1_port, known_port).encode(), c2)
+    sock.sendto('{} {} {}'.format(c2_addr, c2_port, known_port).encode(), c1)

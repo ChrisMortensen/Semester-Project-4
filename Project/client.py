@@ -1,52 +1,61 @@
 import socket
+import sys
 import threading
-import datetime
 
-STUN_SERVER_IP = "107.189.20.63"
-STUN_SERVER_PORT = 12345
+rendezvous = ('107.189.20.63', 55555)
 
+# connect to rendezvous
+print('connecting to rendezvous server')
 
-def main():
-    client_socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+sock.bind(('0.0.0.0', 50001))
+sock.sendto(b'0', rendezvous)
 
-    # register client
-    client_socket.sendto("REGISTER".encode(), (STUN_SERVER_IP, STUN_SERVER_PORT))
+while True:
+    data = sock.recv(1024).decode()
 
-    # Receive own IP and port from the STUN server
-    response = client_socket.recv(1024).decode()
-    my_id , my_ip , my_port = response.split(',')
-    print(f"Registered as client {my_id} with IP {my_ip} and port {my_port}")
+    if data.strip() == 'ready':
+        print('checked in with server, waiting')
+        break
 
-    # create a thread to listen for messages from other clients
+data = sock.recv(1024).decode()
+ip, sport, dport = data.split(' ')
+sport = int(sport)
+dport = int(dport)
 
-    client_id = int(input("Enter client number\n"))
-    # Request the IP and port of desired client
-    client_socket.sendto(f"REQUEST {client_id}".encode(), (STUN_SERVER_IP, STUN_SERVER_PORT))
-    response = client_socket.recv(1024).decode()
-    if response == "NOT_FOUND":
-        print(f"Client {client_id} not found")
-    else:
-        client_ip, client_port = response.split(',')
-        print(f"connected to client {client_id}.")
-    print("ready to send")
-    client_handler = threading.Thread(target=listen, args=(client_socket,))
-    client_handler.start()
+print('\ngot peer')
+print('  ip:          {}'.format(ip))
+print('  source port: {}'.format(sport))
+print('  dest port:   {}\n'.format(dport))
 
-    while(True):
-        # ask for the message to send
-        message = input()
-        # attach the date and time of sending to the message
-        message = f"{message} (sent at {datetime.datetime.now()})"
-        # send the message to the desired client
-        client_socket.sendto(message.encode(), (client_ip, int(client_port)))
+# punch hole
+# equiv: echo 'punch hole' | nc -u -p 50001 x.x.x.x 50002
+print('punching hole')
 
-def listen(client_socket):
+sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+sock.bind(('0.0.0.0', sport))
+sock.sendto(b'0', (ip, dport))
 
-    print(f"ready to listen")
+print('ready to exchange messages\n')
+
+# listen for
+# equiv: nc -u -l 50001
+def listen():
+    sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    sock.bind(('0.0.0.0', sport))
 
     while True:
-        message, addr = client_socket.recvfrom(1024)
-        print(f"Received message: {message.decode()}")
-    
-if __name__ == "__main__":
-    main()
+        data = sock.recv(1024)
+        print('\rpeer: {}\n> '.format(data.decode()), end='')
+
+listener = threading.Thread(target=listen, daemon=True);
+listener.start()
+
+# send messages
+# equiv: echo 'xxx' | nc -u -p 50002 x.x.x.x 50001
+sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+sock.bind(('0.0.0.0', dport))
+
+while True:
+    msg = input('> ')
+    sock.sendto(msg.encode(), (ip, sport))
