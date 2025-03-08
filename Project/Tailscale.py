@@ -11,11 +11,18 @@ def get_tailscale_devices():
     try:
         result = subprocess.run(["tailscale", "status", "--json"], capture_output=True, text=True, check=True)
         status = json.loads(result.stdout)
-        
-        devices = [
-            (peer.get("HostName"), peer.get("TailAddr"))
-            for peer in status.get("Peer", {}).values()
-        ]
+
+        devices = []
+        for peer in status.get("Peer", {}).values():
+            hostname = peer.get("HostName")
+            tailscale_ips = peer.get("TailscaleIPs", [])
+
+            # Extract the first IPv4 address
+            tail_addr = next((ip for ip in tailscale_ips if "." in ip), None)
+
+            if hostname and tail_addr:
+                devices.append((hostname, tail_addr))
+
         return devices
     except Exception as e:
         print(f"Error getting Tailscale devices: {e}")
