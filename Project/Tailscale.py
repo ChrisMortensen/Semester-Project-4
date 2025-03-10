@@ -14,14 +14,15 @@ def get_tailscale_devices():
 
         devices = []
         for peer in status.get("Peer", {}).values():
-            hostname = peer.get("HostName")
-            tailscale_ips = peer.get("TailscaleIPs", [])
+            if peer.get("Online"):
+                hostname = peer.get("HostName")
+                tailscale_ips = peer.get("TailscaleIPs", [])
 
-            # Extract the first IPv4 address
-            tail_addr = next((ip for ip in tailscale_ips if "." in ip), None)
+                # Extract the first IPv4 address
+                tail_addr = next((ip for ip in tailscale_ips if "." in ip), None)
 
-            if hostname and tail_addr:
-                devices.append((hostname, tail_addr))
+                if hostname and tail_addr:
+                    devices.append((hostname, tail_addr))
 
         return devices
     except Exception as e:
