@@ -28,7 +28,7 @@ def get_tailscale_devices():
         devices = []
         for peer in status.get("Peer", {}).values():
             if peer.get("Online"):
-                hostname = peer.get("HostName")
+                hostname = peer.get("DNSName").split(".tail")[0]
                 tailscale_ips = peer.get("TailscaleIPs", [])
 
                 # Extract the first IPv4 address
