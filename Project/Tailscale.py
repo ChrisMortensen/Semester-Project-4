@@ -9,7 +9,7 @@ PORT = 65432  # Port for communication
 # Function to get all available Tailscale devices
 def get_tailscale_devices():
     try:
-        result = subprocess.run(["tailscale", "status", "--json"], capture_output=True, text=True, check=True)
+        result = subprocess.run(["C:/Program Files/Tailscale/tailscale.exe", "status", "--json"], capture_output=True, text=True, check=True)
         status = json.loads(result.stdout)
 
         devices = []
