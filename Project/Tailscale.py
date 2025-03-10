@@ -73,8 +73,9 @@ if not devices:
 
 # Display devices and let user pick one
 print("\nAvailable Tailscale Devices:")
+max_name_length = max(len(name) for name, _ in devices) # Find the longest name
 for idx, (name, ip) in enumerate(devices, start=1):
-    print(f"{idx}. {name} ({ip})")
+    print(f"{idx}. {name.ljust(max_name_length)} | {ip}")
 
 while True:
     try:
