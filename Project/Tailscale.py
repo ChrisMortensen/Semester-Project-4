@@ -4,12 +4,25 @@ import sys
 import subprocess
 import json
 
+MACOS_TAILSCALE_PATH = "/Applications/Tailscale.app/Contents/MacOS/tailscale"
+WINDOWS_TAILSCALE_PATH = "C:/Program Files/Tailscale/tailscale.exe"
+
+# Determine the correct Tailscale path based on OS
+if sys.platform.startswith("win"):
+    tailscalePath = WINDOWS_TAILSCALE_PATH
+elif sys.platform.startswith("darwin"):
+    tailscalePath = MACOS_TAILSCALE_PATH
+else:
+    print("Unsupported OS")
+    sys.exit(1)
+
+
 PORT = 65432  # Port for communication
 
 # Function to get all available Tailscale devices
 def get_tailscale_devices():
     try:
-        result = subprocess.run(["C:/Program Files/Tailscale/tailscale.exe", "status", "--json"], capture_output=True, text=True, check=True)
+        result = subprocess.run([tailscalePath, "status", "--json"], capture_output=True, text=True, check=True)
         status = json.loads(result.stdout)
 
         devices = []
