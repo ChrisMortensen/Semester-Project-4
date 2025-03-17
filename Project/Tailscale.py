@@ -3,12 +3,15 @@ import threading
 import sys
 import subprocess
 import json
+from collections import deque
 
 import command_injection  
+import denial_of_service
 
 MACOS_TAILSCALE_PATH = "/Applications/Tailscale.app/Contents/MacOS/tailscale"
 WINDOWS_TAILSCALE_PATH = "C:/Program Files/Tailscale/tailscale.exe"
 PORT = 65432  # Port for communication
+MAX_MESSAGES_PER_SECOND = 5  # Maximum allowed messages per second
 
 def get_tailscale_path(platform):
     """
@@ -57,21 +60,31 @@ def get_tailscale_devices(tailscale_path):
         print(f"Error getting Tailscale devices: {e}")
         return []
 
-def receive_messages(sock, callback):
+def receive_messages(sock, peer_ip, is_rate_limited, sanitize_message):
     """
     Listens for incoming messages on the UDP socket.
 
     Args:
         sock (socket): The UDP socket.
-        callback (function): Function to process received messages.
+        peer_ip (str): The IP address of the connected peer.
+        is_rate_limited (function): Function to check message rate.
+        sanitize_message (function): Function to process received messages.
     """
+    message_timestamps = deque(maxlen=MAX_MESSAGES_PER_SECOND)  # Stores timestamps of last messages
+
     while True:
         try:
-            data, _ = sock.recvfrom(1024)
+            data, addr = sock.recvfrom(1024)
+
+            # Ensure message is comming from peer
+            if addr[0] != peer_ip:
+                continue  # Drop the message
+
+            if is_rate_limited(message_timestamps, MAX_MESSAGES_PER_SECOND): # Rate limiting (denial_of_service.py)
+                continue  # Drop the message
+
             message = data.decode()
-            
-            # Use function from command_injection.py
-            callback(message)
+            sanitize_message(message) # Sanitizing (Command_injection.py)
             
         except Exception as e:
             print(f"Receive error: {e}")
@@ -174,7 +187,7 @@ def run_tailscale():
     print(f"\nConnected to {device_name} ({peer_ip})")
 
     # Start the receive thread
-    recv_thread = threading.Thread(target=receive_messages, args=(sock, command_injection.process_peer_message))
+    recv_thread = threading.Thread(target=receive_messages, args=(sock, peer_ip, denial_of_service.is_rate_limited, command_injection.process_peer_message))
     recv_thread.daemon = True
     recv_thread.start()
 
