@@ -2,3 +2,5 @@
 Project/.vs/
 
 Project/__pycache__/
+
+Project/encryption_test/__pycache__/
