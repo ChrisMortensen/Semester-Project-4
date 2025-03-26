@@ -90,25 +90,23 @@ def receive_messages(sock, peer_ip, is_rate_limited, sanitize_message):
             print(f"Receive error: {e}")
             break
 
-def send_messages(sock, peer_ip):
+def send_messages(conn):
     """
     Sends user input messages to a peer device.
 
     Args:
-        sock (socket): The UDP socket.
-        peer_ip (str): The IP address of the peer device.
+        conn (socket): The TCP connection.
     """
     while True:
         try:
             message = input("> ")
             if message.lower() == "exit":
                 break
-            sock.sendto(message.encode(), (peer_ip, PORT))
+            conn.send(message.encode())  # Send data over TCP
 
         except Exception as e:
             print(f"Send error: {e}")
             break
-
 def print_devices(devices):
     """
     Prints the device on the Tailscale network.
@@ -139,18 +137,19 @@ def get_device_choice(devices):
         except ValueError:
             print("Please enter a valid number.")
 
-def create_udp_socket():
+def create_tcp_socket():
     """
-    Creates and binds a UDP socket to receive messages.
-
+    Creates and binds a TCP socket to receive messages.
+    
     Returns:
-        socket.socket: The created and bound UDP socket.
+        socket.socket: The created and bound TCP socket.
     """
-    sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 
-    # Bind to all interfaces to receive messages
+    # Bind to all interfaces and listen for incoming connections
     try:
         sock.bind(("0.0.0.0", PORT))
+        sock.listen(1)  # Allow only one connection at a time
         return sock
     except OSError as e:
         print(f"Port binding error: {e}")
@@ -183,7 +182,7 @@ def run_tailscale():
     device_name, peer_ip = get_device_choice(devices)
 
     # Create a UDP socket
-    sock = create_udp_socket()
+    sock = create_tcp_socket()
     print(f"\nConnected to {device_name} ({peer_ip})")
 
     # Start the receive thread
@@ -192,7 +191,7 @@ def run_tailscale():
     recv_thread.start()
 
     # Start sending messages
-    send_messages(sock, peer_ip)
+    send_messages(sock)
 
     # Close socket after exiting
     sock.close()
