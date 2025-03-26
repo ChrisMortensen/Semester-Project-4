@@ -60,7 +60,7 @@ def get_tailscale_devices(tailscale_path):
         print(f"Error getting Tailscale devices: {e}")
         return []
 
-def receive_messages(conn, peer_ip):
+def receive_messages(sock, peer_ip, is_rate_limited, sanitize_message):
     """
     Listens for incoming messages on the UDP socket.
 
@@ -70,43 +70,45 @@ def receive_messages(conn, peer_ip):
         is_rate_limited (function): Function to check message rate.
         sanitize_message (function): Function to process received messages.
     """
-    message_timestamps = deque(maxlen=MAX_MESSAGES_PER_SECOND)  
+    message_timestamps = deque(maxlen=MAX_MESSAGES_PER_SECOND)  # Stores timestamps of last messages
 
     while True:
         try:
-            data = conn.recv(1024)  # Receive message
-            if not data:
-                break  # Exit if connection is closed
+            data, addr = sock.recvfrom(1024)
 
-            if denial_of_service.is_rate_limited(message_timestamps, MAX_MESSAGES_PER_SECOND):
-                continue  # Drop message if rate limit exceeded
+            # Ensure message is comming from peer
+            if addr[0] != peer_ip:
+                continue  # Drop the message
+
+            if is_rate_limited(message_timestamps, MAX_MESSAGES_PER_SECOND): # Rate limiting (denial_of_service.py)
+                continue  # Drop the message
 
             message = data.decode()
-            command_injection.process_peer_message(message)  # Process message securely
+            sanitize_message(message) # Sanitizing (Command_injection.py)
             
         except Exception as e:
             print(f"Receive error: {e}")
             break
 
-
-def send_messages(conn):
+def send_messages(sock, peer_ip):
     """
     Sends user input messages to a peer device.
 
     Args:
-        conn (socket): The TCP connection.
+        sock (socket): The UDP socket.
+        peer_ip (str): The IP address of the peer device.
     """
     while True:
         try:
             message = input("> ")
             if message.lower() == "exit":
                 break
-            conn.send(message.encode())  
+            sock.sendto(message.encode(), (peer_ip, PORT))
 
         except Exception as e:
             print(f"Send error: {e}")
             break
-        
+
 def print_devices(devices):
     """
     Prints the device on the Tailscale network.
@@ -137,19 +139,18 @@ def get_device_choice(devices):
         except ValueError:
             print("Please enter a valid number.")
 
-def create_tcp_socket():
+def create_udp_socket():
     """
-    Creates and binds a TCP socket to receive messages.
-    
-    Returns:
-        socket.socket: The created and bound TCP socket.
-    """
-    sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    Creates and binds a UDP socket to receive messages.
 
-    # Bind to all interfaces and listen for incoming connections
+    Returns:
+        socket.socket: The created and bound UDP socket.
+    """
+    sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+
+    # Bind to all interfaces to receive messages
     try:
         sock.bind(("0.0.0.0", PORT))
-        sock.listen(1)  # Allow only one connection at a time
         return sock
     except OSError as e:
         print(f"Port binding error: {e}")
@@ -168,33 +169,32 @@ def run_tailscale():
     Exits:
         If no devices are found or if any critical error occurs.
     """
+    # Determine the correct Tailscale path based on OS
     tailscale_path = get_tailscale_path(sys.platform)
+
+    # Get the list of available Tailscale devices
     devices = get_tailscale_devices(tailscale_path)
     if not devices:
         print("No available Tailscale devices found.")
         sys.exit(1)
 
+    # Display devices and let user pick one
     print_devices(devices)
     device_name, peer_ip = get_device_choice(devices)
 
-    sock = create_tcp_socket()
-    print(f"\nWaiting for a connection from {device_name} ({peer_ip})...")
+    # Create a UDP socket
+    sock = create_udp_socket()
+    print(f"\nConnected to {device_name} ({peer_ip})")
 
-    sock.settimeout(30)  
-    try:
-        conn, addr = sock.accept()
-        print(f"Connected to {addr}")
+    # Start the receive thread
+    recv_thread = threading.Thread(target=receive_messages, args=(sock, peer_ip, denial_of_service.is_rate_limited, command_injection.process_peer_message))
+    recv_thread.daemon = True
+    recv_thread.start()
 
-        recv_thread = threading.Thread(target=receive_messages, args=(conn, peer_ip))
-        recv_thread.daemon = True
-        recv_thread.start()
+    # Start sending messages
+    send_messages(sock, peer_ip)
 
-        send_messages(conn)
-        conn.close()  
-    except socket.timeout:
-        print("Connection timeout.")
-        sys.exit(1)
-
+    # Close socket after exiting
     sock.close()
 
 # Allows us to use this file as an executable script (run directly) 
