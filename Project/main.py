@@ -110,7 +110,6 @@ def main():
     """
     Main function for the program.
 
-    - Determines the Tailscale binary path based on the OS.
     - Retrieves and displays available Tailscale devices.
     - Allows the user to select a device.
     - Establishes a UDP connection with the selected peer.
@@ -119,11 +118,9 @@ def main():
     Exits:
         If no devices are found or if any critical error occurs.
     """
-    # Determine the correct Tailscale path based on OS
-    tailscale_path = tailscale.get_tailscale_path(sys.platform)
 
     # Get the list of available Tailscale devices
-    devices = tailscale.get_tailscale_devices(tailscale_path)
+    devices = tailscale.get_tailscale_devices()
     if not devices:
         print("No available Tailscale devices found.")
         sys.exit(1)

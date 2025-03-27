@@ -26,13 +26,14 @@ def get_tailscale_path(platform):
         print("Unsupported OS")
         sys.exit(1)
 
-def get_tailscale_devices(tailscale_path):
+def get_tailscale_devices():
     """
     Retrieves and returns a list of available Tailscale devices.
     
     Returns:
         list: A list of tuples containing (hostname, IP address)
     """
+    tailscale_path = get_tailscale_path(sys.platform)
     try:
         result = subprocess.run([tailscale_path, "status", "--json"], capture_output=True, text=True, check=True)
         status = json.loads(result.stdout)
