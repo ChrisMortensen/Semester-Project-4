@@ -10,55 +10,6 @@ import tailscale
 PORT = 65432  # Port for communication
 MAX_MESSAGES_PER_SECOND = 5  # Maximum allowed messages per second
 
-def receive_messages(sock, peer_ip, is_rate_limited, sanitize_message):
-    """
-    Listens for incoming messages on the UDP socket.
-
-    Args:
-        sock (socket): The UDP socket.
-        peer_ip (str): The IP address of the connected peer.
-        is_rate_limited (function): Function to check message rate.
-        sanitize_message (function): Function to process received messages.
-    """
-    message_timestamps = deque(maxlen=MAX_MESSAGES_PER_SECOND)  # Stores timestamps of last messages
-
-    while True:
-        try:
-            data, addr = sock.recvfrom(1024)
-
-            # Ensure message is comming from peer
-            if addr[0] != peer_ip:
-                continue  # Drop the message
-
-            if is_rate_limited(message_timestamps, MAX_MESSAGES_PER_SECOND): # Rate limiting (denial_of_service.py)
-                continue  # Drop the message
-
-            message = data.decode()
-            sanitize_message(message) # Sanitizing (Command_injection.py)
-            
-        except Exception as e:
-            print(f"Receive error: {e}")
-            break
-
-def send_messages(sock, peer_ip):
-    """
-    Sends user input messages to a peer device.
-
-    Args:
-        sock (socket): The UDP socket.
-        peer_ip (str): The IP address of the peer device.
-    """
-    while True:
-        try:
-            message = input("> ")
-            if message.lower() == "exit":
-                break
-            sock.sendto(message.encode(), (peer_ip, PORT))
-
-        except Exception as e:
-            print(f"Send error: {e}")
-            break
-
 def print_devices(devices):
     """
     Prints the device on the Tailscale network.
@@ -89,22 +40,112 @@ def get_device_choice(devices):
         except ValueError:
             print("Please enter a valid number.")
 
-def create_udp_socket():
+def create_tcp_socket(peer_type, port=None):
     """
-    Creates and binds a UDP socket to receive messages.
+    Creates a TCP socket for either a client or a server.
+
+    Args:
+        peer_type (str): "server" or "client" to specify socket behavior.
+        port (int, optional): The port number (only required for the server).
 
     Returns:
-        socket.socket: The created and bound UDP socket.
+        socket.socket: The created TCP socket.
     """
-    sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 
-    # Bind to all interfaces to receive messages
+    if peer_type.lower() == "server":
+        if port is None:
+            raise ValueError("Port must be specified for a server socket.")
+        sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        sock.bind(("0.0.0.0", port))
+        sock.listen(1)
+
+    return sock
+
+def try_connect_or_listen(host, port):
+    """
+    Attempts to connect to a peer first, then switches to listening if it fails.
+
+    Args:
+        host (str): The IP address of the peer.
+        port (int): The port to use.
+
+    Returns:
+        socket.socket: The connected socket.
+    """
+    sock = create_tcp_socket("client")
+    sock.settimeout(2)
+
     try:
-        sock.bind(("0.0.0.0", PORT))
+        sock.connect((host, port))
+        print("Connected as client.")
+        sock.settimeout(None)  # Ensure blocking mode for receiving
         return sock
-    except OSError as e:
-        print(f"Port binding error: {e}")
-        sys.exit(1)
+    except (socket.error, ConnectionRefusedError):
+        sock.close()
+
+    # If connection failed, become the "server"-peer
+    server_sock = create_tcp_socket("server", port)
+    print("Waiting for peer to connect...")
+    
+    conn, addr = server_sock.accept()
+    print(f"Accepted connection from {addr}")
+    conn.settimeout(None)  # Ensure blocking mode
+
+    server_sock.close()  # We no longer need the listening socket
+    return conn
+
+def receive_messages(sock, is_rate_limited, sanitize_message):
+    """
+    Listens for incoming messages on the TCP socket.
+
+    Args:
+        sock (socket): The TCP socket.
+        is_rate_limited (function): Function to check message rate.
+        sanitize_message (function): Function to process received messages.
+    """
+    message_timestamps = deque(maxlen=MAX_MESSAGES_PER_SECOND)
+
+    buffer = ""
+
+    while True:
+        try:
+            data = sock.recv(1024).decode()
+            if not data:
+                print("Connection closed by peer.")
+                break
+
+            buffer += data
+            while "\n" in buffer:  # Process complete messages
+                message, buffer = buffer.split("\n", 1)
+
+                if is_rate_limited(message_timestamps, MAX_MESSAGES_PER_SECOND): # Rate limiting (denial_of_service.py)
+                    continue
+
+                sanitize_message(message) # Sanitizing (Command_injection.py)
+
+        except socket.timeout:
+            continue
+        except Exception as e:
+            print(f"Receive error: {e}")
+            break
+
+def send_messages(sock):
+    """
+    Sends user input messages to a peer device over TCP.
+
+    Args:
+        sock (socket): The TCP socket.
+    """
+    while True:
+        try:
+            message = input("> ")
+            if message.lower() == "exit":
+                break
+            sock.sendall((message + "\n").encode())  # Ensure full message is sent
+        except Exception as e:
+            print(f"Send error: {e}")
+            break
 
 def main():
     """
@@ -112,7 +153,7 @@ def main():
 
     - Retrieves and displays available Tailscale devices.
     - Allows the user to select a device.
-    - Establishes a UDP connection with the selected peer.
+    - Establishes a TCP connection with the selected peer.
     - Starts separate threads for receiving and sending messages.
 
     Exits:
@@ -129,17 +170,17 @@ def main():
     print_devices(devices)
     device_name, peer_ip = get_device_choice(devices)
 
-    # Create a UDP socket
-    sock = create_udp_socket()
+    # Establish TCP connection
+    sock = try_connect_or_listen(peer_ip, PORT)
     print(f"\nConnected to {device_name} ({peer_ip})")
 
     # Start the receive thread
-    recv_thread = threading.Thread(target=receive_messages, args=(sock, peer_ip, denial_of_service.is_rate_limited, command_injection.process_peer_message))
+    recv_thread = threading.Thread(target=receive_messages, args=(sock, denial_of_service.is_rate_limited, command_injection.process_peer_message))
     recv_thread.daemon = True
     recv_thread.start()
 
     # Start sending messages
-    send_messages(sock, peer_ip)
+    send_messages(sock)
 
     # Close socket after exiting
     sock.close()
