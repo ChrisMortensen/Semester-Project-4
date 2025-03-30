@@ -25,10 +25,9 @@ def run_tailscale():
     public_key = ecdh.get_public_key()
 
     # Send public key
-    sock.sendto(public_key.decode(), (peer_ip, PORT))
+    sock.sendto(public_key, (peer_ip, PORT))
     peer_public_key, _ = sock.recvfrom(4096)
-    peer_public_key = peer_public_key.decode()
-    print(f"Received Peer Public Key: {peer_public_key}")
+    print(f"Received Peer Public Key: {peer_public_key.decode()}")
 
     # Generate shared secret
     shared_secret = ecdh.generate_shared_secret(peer_public_key)
