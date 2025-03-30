@@ -17,12 +17,13 @@ class ECDHKeyExchange:
 
     def get_public_key(self):
         """
-        Returns the public key in bytes format.
+        Returns the public key as a properly formatted PEM string.
         """
         return self.public_key.public_bytes(
-            encoding=serialization.Encoding.PEM,
-            format=serialization.PublicFormat.SubjectPublicKeyInfo
-        )
+        encoding=serialization.Encoding.PEM,
+        format=serialization.PublicFormat.SubjectPublicKeyInfo
+    ).decode()  # Convert bytes to a string
+
 
     def generate_shared_secret(self, peer_public_key_bytes):
         """
