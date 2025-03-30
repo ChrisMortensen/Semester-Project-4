@@ -25,6 +25,7 @@ def run_tailscale():
     public_key = ecdh.get_public_key()
 
     # Send public key
+    print(f"Sending public key:\n{public_key}")  # Debug print before sending
     sock.sendto(public_key, (peer_ip, PORT))
     peer_public_key, _ = sock.recvfrom(4096)
     print(f"Received Peer Public Key: {peer_public_key.decode()}")
