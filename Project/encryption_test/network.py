@@ -3,9 +3,9 @@ import socket
 import sys
 from collections import deque
 from denial_of_service import is_rate_limited
+import socket
 
 PORT = 65432
-
 
 def create_udp_socket():
     """
@@ -72,3 +72,4 @@ def send_messages(sock, peer_ip, encrypt_message, key):
         except Exception as e:
             print(f"Send error: {e}")
             break
+

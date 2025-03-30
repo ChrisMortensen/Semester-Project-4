@@ -26,7 +26,7 @@ class ECDHKeyExchange:
     )
 
 
-    def generate_shared_secret(self, peer_public_key_bytes):
+    def generate_shared_secret(self, peer_public_key):
         """
         Generates a shared secret using ECDH.
 

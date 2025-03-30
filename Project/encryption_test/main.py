@@ -5,7 +5,9 @@ import command_injection
 import denial_of_service
 from clientdog import get_tailscale_devices, get_tailscale_path, get_device_choice, print_devices
 from network import create_udp_socket, receive_messages, send_messages
+import time
 
+MAX_RETRIES = 5  # Retry a few times before giving up
 PORT = 65432
 
 def run_tailscale():
@@ -24,17 +26,38 @@ def run_tailscale():
     ecdh = ECDHKeyExchange()
     public_key = ecdh.get_public_key()
 
-    # Send public key
-    print(f"Sending public key:\n{public_key}")  # Debug print before sending
-    sock.sendto(public_key, (peer_ip, PORT))
-    peer_public_key, _ = sock.recvfrom(4096)
-    print(f"Received Peer Public Key: {peer_public_key.decode()}")
+    # Send the "READY" signal to the peer
+    sock.sendto(b"READY", (peer_ip, PORT))  # Notify the peer that you're ready
 
-    # Generate shared secret
+    # Wait for the peer to respond with the "READY" signal
+    signal, _ = sock.recvfrom(4096)
+    if signal == b"READY":
+        print("Receiver ready. Waiting for public key...")
+
+    # Send your public key after receiving the "READY" response
+    sock.sendto(public_key, (peer_ip, PORT))
+
+    # Try receiving the peer's public key with retries
+    for _ in range(MAX_RETRIES):
+        try:
+            peer_public_key, _ = sock.recvfrom(4096)  # Ensure buffer is large enough
+            if not peer_public_key:
+                print("Error: No data received for peer public key")
+                continue
+            print(f"Received Peer Public Key: {peer_public_key}")  # Debugging output
+            break  # Exit loop once we successfully received the key
+        except ConnectionResetError as e:
+            print(f"Connection reset. Retrying... {e}")
+            time.sleep(1)  # Wait a moment before retrying
+    else:
+        print("Max retries reached. Exiting.")
+        sys.exit(1)
+
+    # Generate shared secret from the peer's public key
     shared_secret = ecdh.generate_shared_secret(peer_public_key)
     print("Secure channel established!")
 
-    # Start threads
+    # Start threads for receiving and sending messages
     recv_thread = threading.Thread(target=receive_messages, args=(
         sock, peer_ip, denial_of_service.is_rate_limited, command_injection.process_peer_message, decrypt_message, shared_secret))
     recv_thread.daemon = True
