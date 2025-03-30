@@ -1,6 +1,6 @@
 from cryptography.hazmat.primitives.asymmetric import ec
 from cryptography.hazmat.primitives.kdf.hkdf import HKDF
-from cryptography.hazmat.primitives import hashes
+from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
 import os
 
@@ -19,7 +19,10 @@ class ECDHKeyExchange:
         """
         Returns the public key in bytes format.
         """
-        return self.public_key.public_bytes()
+        return self.public_key.public_bytes(
+            encoding=serialization.Encoding.PEM,
+            format=serialization.PublicFormat.SubjectPublicKeyInfo
+        )
 
     def generate_shared_secret(self, peer_public_key_bytes):
         """
