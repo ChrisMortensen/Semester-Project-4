@@ -4,6 +4,11 @@ from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
 import os
 
+from cryptography.hazmat.primitives.asymmetric import ec
+from cryptography.hazmat.primitives.kdf.hkdf import HKDF
+from cryptography.hazmat.primitives import hashes, serialization
+import os
+
 class ECDHKeyExchange:
     """
     Handles Elliptic-Curve Diffie-Hellman (ECDH) key exchange for secure communication. 
@@ -20,9 +25,9 @@ class ECDHKeyExchange:
         Returns the public key as a properly formatted PEM string.
         """
         return self.public_key.public_bytes(
-        encoding=serialization.Encoding.PEM,
-        format=serialization.PublicFormat.SubjectPublicKeyInfo
-    )
+            encoding=serialization.Encoding.PEM,
+            format=serialization.PublicFormat.SubjectPublicKeyInfo
+        )
 
     def generate_shared_secret(self, peer_public_key_bytes):
         """
@@ -33,16 +38,20 @@ class ECDHKeyExchange:
         Returns:
             bytes: A derived 32-byte encryption key.
         """
-        # If the public key is in raw binary format (not PEM), no need to load it as PEM
         try:
+            # Load the peer's public key from the received PEM bytes
             peer_public_key = serialization.load_pem_public_key(peer_public_key_bytes)
-        except ValueError:
-            # If it's not in PEM format, treat it as raw public key data (bytes)
-            peer_public_key = ec.EllipticCurvePublicKey.from_encoded_point(ec.SECP256R1(), peer_public_key_bytes)
+        except ValueError as e:
+            print(f"Failed to load PEM public key: {e}")
+            raise
 
+        # Now generate the shared secret using ECDH
         shared_secret = self.private_key.exchange(ec.ECDH(), peer_public_key)
+
+        # Derive the final encryption key using HKDF
         derived_key = HKDF(algorithm=hashes.SHA256(), length=32, salt=None, info=b'ecdh key').derive(shared_secret)
         return derived_key
+
 
 def encrypt_message(message, key):
     """
