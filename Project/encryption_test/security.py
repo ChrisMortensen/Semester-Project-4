@@ -26,7 +26,7 @@ class ECDHKeyExchange:
     )
 
 
-    def generate_shared_secret(self, peer_public_key):
+    def generate_shared_secret(self, peer_public_key_bytes):
         """
         Generates a shared secret using ECDH.
 
@@ -35,8 +35,8 @@ class ECDHKeyExchange:
         Returns:
             bytes: A derived 32-byte encryption key.
         """
-        if peer_public_key:
-            peer_public_key = serialization.load_pem_public_key(peer_public_key)
+        if peer_public_key_bytes:
+            peer_public_key = serialization.load_pem_public_key(peer_public_key_bytes)
         else:
              print("Error: Received an empty public key")
              sys.exit(1)
