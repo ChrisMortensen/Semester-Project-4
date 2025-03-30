@@ -3,6 +3,7 @@ from cryptography.hazmat.primitives.kdf.hkdf import HKDF
 from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
 import os
+import sys
 
 class ECDHKeyExchange:
     """
@@ -34,7 +35,11 @@ class ECDHKeyExchange:
         Returns:
             bytes: A derived 32-byte encryption key.
         """
-        peer_public_key = serialization.load_pem_public_key(peer_public_key)
+        if peer_public_key:
+            peer_public_key = serialization.load_pem_public_key(peer_public_key)
+        else:
+             print("Error: Received an empty public key")
+             sys.exit(1)
         shared_secret = self.private_key.exchange(ec.ECDH(), peer_public_key)
         derived_key = HKDF(algorithm=hashes.SHA256(), length=32, salt=None, info=b'ecdh key').derive(shared_secret)
         return derived_key
