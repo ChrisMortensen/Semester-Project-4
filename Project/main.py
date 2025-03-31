@@ -112,12 +112,12 @@ def receive_messages(sock, key, is_rate_limited, sanitize_message):
 
     while True:
         try:
-            data = sock.recv(1024).decode()
+            data = sock.recv(1024)
             if not data:
                 print("Connection closed by peer.")
                 break
-            
-            message = security.decrypt_message(message, key)
+
+            data = security.decrypt_message(data, key).decode()
 
             buffer += data
             while "\n" in buffer:  # Process complete messages
@@ -149,27 +149,35 @@ def send_messages(sock, key):
                 break
             message = message + "\n"
             message = security.encrypt_message(message, key)
-            sock.sendall(message.encode())  # Ensure full message is sent
+            sock.sendall(message)  # Ensure full message is sent
         except Exception as e:
             print(f"Send error: {e}")
             break
 
 def key_exchange(sock):
     '''
-    Example text
+    Encryption for the program.
+
+    - Create public and private key
+    - Sends public key
+    - Receives peers public key
+    - Generates a shared secret key
 
     Args:
         sock (socket): The TCP socket.
+
+    Returns:
+        bytes: Derived shared secret key
     '''
-    #Create public and private key
+    # Create public and private key
     ecdh = security.ECDHKeyExchange()
     public_key = ecdh.get_public_key()
 
-    #Sending public key to peer
+    # Sending public key to peer
     print(public_key)
     sock.sendall(public_key)
 
-    #Recieve peer public key
+    # Recieve peer public key
     peer_public_key = sock.recv(4096)
     print(peer_public_key)
 
@@ -177,8 +185,6 @@ def key_exchange(sock):
     shared_secret = ecdh.generate_shared_secret(peer_public_key)
     print("Secure channel established!")
     return shared_secret
-
-
 
 def main():
     """
