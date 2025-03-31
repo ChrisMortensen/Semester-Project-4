@@ -6,6 +6,7 @@ from collections import deque
 import command_injection  
 import denial_of_service
 import tailscale
+import security
 
 PORT = 65432  # Port for communication
 MAX_MESSAGES_PER_SECOND = 5  # Maximum allowed messages per second
@@ -95,12 +96,13 @@ def try_connect_or_listen(host, port):
     server_sock.close()  # We no longer need the listening socket
     return conn
 
-def receive_messages(sock, is_rate_limited, sanitize_message):
+def receive_messages(sock, key, is_rate_limited, sanitize_message):
     """
     Listens for incoming messages on the TCP socket.
 
     Args:
         sock (socket): The TCP socket.
+        key (bytes): The decryption key.
         is_rate_limited (function): Function to check message rate.
         sanitize_message (function): Function to process received messages.
     """
@@ -110,10 +112,12 @@ def receive_messages(sock, is_rate_limited, sanitize_message):
 
     while True:
         try:
-            data = sock.recv(1024).decode()
+            data = sock.recv(1024)
             if not data:
                 print("Connection closed by peer.")
                 break
+
+            data = security.decrypt_message(data, key).decode()
 
             buffer += data
             while "\n" in buffer:  # Process complete messages
@@ -130,22 +134,55 @@ def receive_messages(sock, is_rate_limited, sanitize_message):
             print(f"Receive error: {e}")
             break
 
-def send_messages(sock):
+def send_messages(sock, key):
     """
     Sends user input messages to a peer device over TCP.
 
     Args:
         sock (socket): The TCP socket.
+        key (bytes): The decryption key.
     """
     while True:
         try:
             message = input("> ")
             if message.lower() == "exit":
                 break
-            sock.sendall((message + "\n").encode())  # Ensure full message is sent
+            message = message + "\n"
+            message = security.encrypt_message(message, key)
+            sock.sendall(message)  # Ensure full message is sent
         except Exception as e:
             print(f"Send error: {e}")
             break
+
+def key_exchange(sock):
+    '''
+    Encryption for the program.
+
+    - Create public and private key
+    - Sends public key
+    - Receives peers public key
+    - Generates a shared secret key
+
+    Args:
+        sock (socket): The TCP socket.
+
+    Returns:
+        bytes: Derived shared secret key
+    '''
+    # Create public and private key
+    ecdh = security.ECDHKeyExchange()
+    public_key = ecdh.get_public_key()
+
+    # Sending public key to peer
+    sock.sendall(public_key)
+
+    # Recieve peer public key
+    peer_public_key = sock.recv(4096)
+
+    # Generate shared secret from the peer's public key
+    shared_secret = ecdh.generate_shared_secret(peer_public_key)
+    # Secure channel established!
+    return shared_secret
 
 def main():
     """
@@ -174,13 +211,16 @@ def main():
     sock = try_connect_or_listen(peer_ip, PORT)
     print(f"\nConnected to {device_name} ({peer_ip})")
 
+    # Key exchange
+    key = key_exchange(sock)
+
     # Start the receive thread
-    recv_thread = threading.Thread(target=receive_messages, args=(sock, denial_of_service.is_rate_limited, command_injection.process_peer_message))
+    recv_thread = threading.Thread(target=receive_messages, args=(sock, key, denial_of_service.is_rate_limited, command_injection.process_peer_message))
     recv_thread.daemon = True
     recv_thread.start()
 
     # Start sending messages
-    send_messages(sock)
+    send_messages(sock, key)
 
     # Close socket after exiting
     sock.close()
