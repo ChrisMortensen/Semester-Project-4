@@ -116,6 +116,8 @@ def receive_messages(sock, key, is_rate_limited, sanitize_message):
             if not data:
                 print("Connection closed by peer.")
                 break
+            
+            message = security.decrypt_message(message, key)
 
             buffer += data
             while "\n" in buffer:  # Process complete messages
@@ -123,8 +125,6 @@ def receive_messages(sock, key, is_rate_limited, sanitize_message):
 
                 if is_rate_limited(message_timestamps, MAX_MESSAGES_PER_SECOND): # Rate limiting (denial_of_service.py)
                     continue
-                
-                security.decrypt_message(message, key)
 
                 sanitize_message(message) # Sanitizing (Command_injection.py)
 
@@ -147,8 +147,9 @@ def send_messages(sock, key):
             message = input("> ")
             if message.lower() == "exit":
                 break
+            message = message + "\n"
             message = security.encrypt_message(message, key)
-            sock.sendall((message + "\n").encode())  # Ensure full message is sent
+            sock.sendall(message.encode())  # Ensure full message is sent
         except Exception as e:
             print(f"Send error: {e}")
             break
@@ -165,10 +166,12 @@ def key_exchange(sock):
     public_key = ecdh.get_public_key()
 
     #Sending public key to peer
+    print(public_key)
     sock.sendall(public_key)
 
     #Recieve peer public key
-    peer_public_key = sock.recvfrom(4096)
+    peer_public_key = sock.recv(4096)
+    print(peer_public_key)
 
     # Generate shared secret from the peer's public key
     shared_secret = ecdh.generate_shared_secret(peer_public_key)
@@ -213,7 +216,7 @@ def main():
     recv_thread.start()
 
     # Start sending messages
-    send_messages(sock)
+    send_messages(sock, key)
 
     # Close socket after exiting
     sock.close()
