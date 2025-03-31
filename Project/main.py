@@ -174,16 +174,14 @@ def key_exchange(sock):
     public_key = ecdh.get_public_key()
 
     # Sending public key to peer
-    print(public_key)
     sock.sendall(public_key)
 
     # Recieve peer public key
     peer_public_key = sock.recv(4096)
-    print(peer_public_key)
 
     # Generate shared secret from the peer's public key
     shared_secret = ecdh.generate_shared_secret(peer_public_key)
-    print("Secure channel established!")
+    # Secure channel established!
     return shared_secret
 
 def main():
