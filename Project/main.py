@@ -96,12 +96,13 @@ def try_connect_or_listen(host, port):
     server_sock.close()  # We no longer need the listening socket
     return conn
 
-def receive_messages(sock, is_rate_limited, sanitize_message):
+def receive_messages(sock, key, is_rate_limited, sanitize_message):
     """
     Listens for incoming messages on the TCP socket.
 
     Args:
         sock (socket): The TCP socket.
+        key (bytes): The decryption key.
         is_rate_limited (function): Function to check message rate.
         sanitize_message (function): Function to process received messages.
     """
@@ -122,6 +123,8 @@ def receive_messages(sock, is_rate_limited, sanitize_message):
 
                 if is_rate_limited(message_timestamps, MAX_MESSAGES_PER_SECOND): # Rate limiting (denial_of_service.py)
                     continue
+                
+                security.decrypt_message(message, key)
 
                 sanitize_message(message) # Sanitizing (Command_injection.py)
 
@@ -131,25 +134,32 @@ def receive_messages(sock, is_rate_limited, sanitize_message):
             print(f"Receive error: {e}")
             break
 
-def send_messages(sock):
+def send_messages(sock, key):
     """
     Sends user input messages to a peer device over TCP.
 
     Args:
         sock (socket): The TCP socket.
+        key (bytes): The decryption key.
     """
     while True:
         try:
             message = input("> ")
             if message.lower() == "exit":
                 break
+            message = security.encrypt_message(message, key)
             sock.sendall((message + "\n").encode())  # Ensure full message is sent
         except Exception as e:
             print(f"Send error: {e}")
             break
 
 def key_exchange(sock):
+    '''
+    Example text
 
+    Args:
+        sock (socket): The TCP socket.
+    '''
     #Create public and private key
     ecdh = security.ECDHKeyExchange()
     public_key = ecdh.get_public_key()
@@ -163,6 +173,7 @@ def key_exchange(sock):
     # Generate shared secret from the peer's public key
     shared_secret = ecdh.generate_shared_secret(peer_public_key)
     print("Secure channel established!")
+    return shared_secret
 
 
 
@@ -194,10 +205,10 @@ def main():
     print(f"\nConnected to {device_name} ({peer_ip})")
 
     # Key exchange
-    
+    key = key_exchange(sock)
 
     # Start the receive thread
-    recv_thread = threading.Thread(target=receive_messages, args=(sock, denial_of_service.is_rate_limited, command_injection.process_peer_message))
+    recv_thread = threading.Thread(target=receive_messages, args=(sock, key, denial_of_service.is_rate_limited, command_injection.process_peer_message))
     recv_thread.daemon = True
     recv_thread.start()
 
