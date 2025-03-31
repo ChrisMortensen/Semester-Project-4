@@ -6,6 +6,7 @@ from collections import deque
 import command_injection  
 import denial_of_service
 import tailscale
+import security
 
 PORT = 65432  # Port for communication
 MAX_MESSAGES_PER_SECOND = 5  # Maximum allowed messages per second
@@ -147,6 +148,24 @@ def send_messages(sock):
             print(f"Send error: {e}")
             break
 
+def key_exchange(sock):
+
+    #Create public and private key
+    ecdh = security.ECDHKeyExchange()
+    public_key = ecdh.get_public_key()
+
+    #Sending public key to peer
+    sock.sendall(public_key)
+
+    #Recieve peer public key
+    peer_public_key = sock.recvfrom(4096)
+
+    # Generate shared secret from the peer's public key
+    shared_secret = ecdh.generate_shared_secret(peer_public_key)
+    print("Secure channel established!")
+
+
+
 def main():
     """
     Main function for the program.
@@ -173,6 +192,9 @@ def main():
     # Establish TCP connection
     sock = try_connect_or_listen(peer_ip, PORT)
     print(f"\nConnected to {device_name} ({peer_ip})")
+
+    # Key exchange
+    
 
     # Start the receive thread
     recv_thread = threading.Thread(target=receive_messages, args=(sock, denial_of_service.is_rate_limited, command_injection.process_peer_message))
