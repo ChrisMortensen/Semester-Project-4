@@ -6,7 +6,7 @@ import re
 # Example malicious input: hello && echo "Malware" > Malware.txt
 
 IS_SAFE = True  # FOR TESTING PURPOSES. DO NOT PUSH WHEN FALSE!
-ERROR_ON_INJECTION = True # Subprocess method errors, while the regex method prints the failed injection to peer.
+ERROR_ON_INJECTION = False # Subprocess method errors, while the regex method prints the failed injection to peer.
 
 def safe_method_subprocess(message):
     """
